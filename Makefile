@@ -6,4 +6,8 @@ dropdb:
 	docker exec -it postgres dropdb --username=root --owner=root bank
 migrateup:
 	migrate -path db/migration -database "postgres://root:admin@localhost:5432/bank?sslmode=disable" -verbose up
-.PHONY: postgres createdb dropdb
+migratedown:
+	migrate -path db/migration -database "postgres://root:admin@localhost:5432/bank?sslmode=disable" -verbose down
+sqlc:
+	sqlc generate
+.PHONY: postgres createdb dropdb migrateup migratedown
