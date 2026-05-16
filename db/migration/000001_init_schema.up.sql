@@ -6,7 +6,7 @@ CREATE TABLE "accounts" (
   "created_at" timestamp NOT NULL DEFAULT (now())
 );
 
-CREATE TABLE "entires" (
+CREATE TABLE "entries" (
   "id" bigserial PRIMARY KEY,
   "account_id" bigint NOT NULL,
   "ammount" bigint NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE "transfers" (
 
 CREATE INDEX ON "accounts" ("owner");
 
-CREATE INDEX ON "entires" ("account_id");
+CREATE INDEX ON "entries" ("account_id");
 
 CREATE INDEX ON "transfers" ("from_account_id");
 
@@ -31,7 +31,7 @@ CREATE INDEX ON "transfers" ("to_account_id");
 
 CREATE INDEX ON "transfers" ("from_account_id", "to_account_id");
 
-ALTER TABLE "entires" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "entries" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "transfers" ADD FOREIGN KEY ("from_account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
