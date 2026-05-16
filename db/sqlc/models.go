@@ -16,7 +16,7 @@ type Account struct {
 	CreatedAt pgtype.Timestamp `json:"created_at"`
 }
 
-type Entire struct {
+type Entry struct {
 	ID        int64            `json:"id"`
 	AccountID int64            `json:"account_id"`
 	Ammount   int64            `json:"ammount"`
