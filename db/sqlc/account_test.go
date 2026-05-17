@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -11,12 +10,8 @@ import (
 func TestCreateAccount(t *testing.T) {
 	account := createRandomAccount(t)
 
-	require.NoError(t, err)
 	require.NotEmpty(t, account)
 	require.NotZero(t, account.ID)
-	require.Equal(t, arg.Owner, account.Owner)
-	require.Equal(t, arg.Balance, account.Balance)
-	require.Equal(t, arg.Currency, account.Currency)
 	require.NotZero(t, account.CreatedAt)
 }
 

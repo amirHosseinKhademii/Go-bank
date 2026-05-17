@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var dbSource = os.Getenv("DB_SOURCE")
+var dbSource = os.Getenv("DB_TEST")
 
 var testQueries *Queries
 
