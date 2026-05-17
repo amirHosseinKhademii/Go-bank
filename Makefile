@@ -44,7 +44,7 @@ sqlc:
 	sqlc generate
 
 test:
-	go test -v ./... -cover
+	go test -v ./...
 
 lint:
 	$(shell go env GOPATH)/bin/golangci-lint run ./...
