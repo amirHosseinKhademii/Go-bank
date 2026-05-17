@@ -2,13 +2,13 @@
 // It implements transactional operations with deadlock prevention strategies.
 //
 // Transaction and Locking Strategy:
-// - All money transfers are executed within a single database transaction to ensure atomicity.
-// - To prevent deadlocks when updating multiple accounts, we always update accounts in a consistent order:
-//   we compare account IDs and update the account with the smaller ID first.
-// - The TransferTx function orchestrates a transfer by:
-//   1. Creating a transfer record
-//   2. Creating two entry records (debit and credit)
-//   3. Updating both account balances in a deadlock-safe order
+//   - All money transfers are executed within a single database transaction to ensure atomicity.
+//   - To prevent deadlocks when updating multiple accounts, we always update accounts in a consistent order:
+//     we compare account IDs and update the account with the smaller ID first.
+//   - The TransferTx function orchestrates a transfer by:
+//     1. Creating a transfer record
+//     2. Creating two entry records (debit and credit)
+//     3. Updating both account balances in a deadlock-safe order
 //
 // This approach ensures that concurrent transfers between the same pair of accounts
 // will not deadlock because they always attempt to acquire locks in the same order.
@@ -63,11 +63,12 @@ func (s *Stor) TransferTx(ctx context.Context, arg TransferTxParams) (TransferTx
 	err := s.execTx(ctx, func(q *Queries) error {
 		var err error
 
-		result.Transfer, err = q.CreateTransfer(ctx, CreateTransferParams{
+		argCreateTransfer := CreateTransferParams{
 			FromAccountID: arg.FromAccountID,
 			ToAccountID:   arg.ToAccountID,
 			Amount:        arg.Amount,
-		})
+		}
+		result.Transfer, err = q.CreateTransfer(ctx, argCreateTransfer)
 		if err != nil {
 			return err
 		}
@@ -135,5 +136,3 @@ type TransferTxResult struct {
 	FromAccount Account  `json:"from_account"`
 	ToAccount   Account  `json:"to_account"`
 }
-
-var txKey = struct{}{}

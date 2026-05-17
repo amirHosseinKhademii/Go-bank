@@ -21,4 +21,10 @@ sqlc:
 	sqlc generate
 test:
 	go test -v ./... -cover
-.PHONY: postgres createdb dropdb migrateup migratedown test
+lint:
+	$(shell go env GOPATH)/bin/golangci-lint run ./...
+dev:
+	go run ./cmd/main.go
+build:
+	go build -o bin/app ./cmd/main.go
+.PHONY: postgres createdb dropdb migrateup migratedown test lint sqlc dev build migrateTestDbup migrateTestDbdown

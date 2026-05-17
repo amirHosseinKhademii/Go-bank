@@ -31,11 +31,8 @@ jobs:
         run: |
           go vet ./...
 
-      # - name: Run golangci-lint
-      #   uses: golangci/golangci-lint-action@v3
-      #   with:
-      #     version: v1.58
-      #     args: --timeout=5m --disable=typecheck
+      # - name: Run Lint
+      #   run: make lint
 
   build:
     runs-on: ubuntu-latest

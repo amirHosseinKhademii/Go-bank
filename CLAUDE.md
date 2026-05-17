@@ -53,3 +53,43 @@ Claude Code has been configured with permissions to work with:
 - **sqlc**: Generate Go code from SQL using `sqlc *`
 
 These permissions are configured in `.claude/settings.local.json` to reduce permission prompts when working with these tools.
+
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
+    "ANTHROPIC_AUTH_TOKEN": "ur own",
+    "ANTHROPIC_API_KEY": "",
+    "ANTHROPIC_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+    "ANTHROPIC_SMALL_FAST_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "nvidia/nemotron-3-super-120b-a12b:free"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Read(//Users/amirhosseinkhademi/**)",
+      "Read(//Users/amirhosseinkhademi/.claude/**)",
+      "Bash(npm install *)",
+      "Bash(ccr --version)",
+      "Bash(env)",
+      "Bash(grep -vE \"^.{0,8000}claude-code-router/logs\")",
+      "Bash(curl -s https://openrouter.ai/api/v1/models)",
+      "Bash(python3 -c ' *)",
+      "Bash(go test *)",
+      "Bash(make test *)",
+      "Bash(go mod *)",
+      "Bash(go build *)",
+      "Bash(go run *)",
+      "Bash(golangci-lint run *)",
+      "Bash(go fmt *)",
+      "Bash(go install *)",
+      "Bash(sqlc *)",
+      "Bash(psql *)",
+      "Bash(go version *)",
+      "Bash(make lint *)",
+      "Bash(go env *)"
+    ]
+  }
+}
