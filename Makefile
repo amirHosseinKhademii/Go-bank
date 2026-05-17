@@ -15,4 +15,6 @@ migratedown:
 	migrate -path db/migration -database "$(DB_SOURCE)" -verbose down
 sqlc:
 	sqlc generate
-.PHONY: postgres createdb dropdb migrateup migratedown
+test:
+	go test -v ./...
+.PHONY: postgres createdb dropdb migrateup migratedown test
