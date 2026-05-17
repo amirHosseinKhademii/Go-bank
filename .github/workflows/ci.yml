@@ -37,6 +37,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: lint_format
+    env:
+      DB_SOURCE: ${{ secrets.DB_SOURCE }}
+      DB_TEST: ${{ secrets.DB_TEST }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
