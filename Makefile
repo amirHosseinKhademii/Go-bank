@@ -31,12 +31,20 @@ migrateTestDbup:
 		echo "Installing migrate..."; \
 		go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest; \
 	fi
+	@if [ -z "$(DB_TEST)" ]; then \
+		echo "Error: DB_TEST is not set"; \
+		exit 1; \
+	fi
 	migrate -path db/migration -database "$(DB_TEST)" -verbose up
 
 migrateTestDbdown:
 	@if ! command -v migrate 2>/dev/null; then \
 		echo "Installing migrate..."; \
 		go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest; \
+	fi
+	@if [ -z "$(DB_TEST)" ]; then \
+		echo "Error: DB_TEST is not set"; \
+		exit 1; \
 	fi
 	migrate -path db/migration -database "$(DB_TEST)" -verbose down -all
 
