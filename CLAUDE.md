@@ -44,3 +44,12 @@ The project uses environment variables for database connections and API keys (fo
 - The `.env` file is automatically loaded by the Makefile via `include .env` and `export`.
 - When working with the database, ensure the Postgres container is running (if using local) or that the remote database is accessible.
 - After changing SQL in `db/query/` or `db/migration/`, run `make sqlc` to regenerate the Go code.
+
+## Available Skills
+
+Claude Code has been configured with permissions to work with:
+- **Go**: Build (`go build`), run (`go run`), test (`go test`), format (`go fmt`), install (`go install`), and manage modules (`go mod *`)
+- **PostgreSQL**: Execute SQL commands via `psql`
+- **sqlc**: Generate Go code from SQL using `sqlc *`
+
+These permissions are configured in `.claude/settings.local.json` to reduce permission prompts when working with these tools.

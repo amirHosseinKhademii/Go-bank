@@ -1,3 +1,17 @@
+// package repository provides database operations for the bank service.
+// It implements transactional operations with deadlock prevention strategies.
+//
+// Transaction and Locking Strategy:
+// - All money transfers are executed within a single database transaction to ensure atomicity.
+// - To prevent deadlocks when updating multiple accounts, we always update accounts in a consistent order:
+//   we compare account IDs and update the account with the smaller ID first.
+// - The TransferTx function orchestrates a transfer by:
+//   1. Creating a transfer record
+//   2. Creating two entry records (debit and credit)
+//   3. Updating both account balances in a deadlock-safe order
+//
+// This approach ensures that concurrent transfers between the same pair of accounts
+// will not deadlock because they always attempt to acquire locks in the same order.
 package repository
 
 import (
@@ -19,6 +33,8 @@ func NewStore(db *pgxpool.Pool) *Stor {
 	}
 }
 
+// execTx runs a function within a database transaction and handles commit or rollback.
+// It ensures that all operations in fn are executed atomically.
 func (s *Stor) execTx(ctx context.Context, fn func(*Queries) error) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -37,6 +53,10 @@ func (s *Stor) execTx(ctx context.Context, fn func(*Queries) error) error {
 	return tx.Commit(ctx)
 }
 
+// TransferTx performs a money transfer from one account to another.
+// It creates a transfer record, two entry records (one for each account), and updates the balances of both accounts.
+// To avoid deadlock when updating multiple accounts, the accounts are updated in a consistent order (by account ID).
+// This function is executed within a transaction to ensure atomicity.
 func (s *Stor) TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error) {
 	var result TransferTxResult
 
@@ -80,6 +100,10 @@ func (s *Stor) TransferTx(ctx context.Context, arg TransferTxParams) (TransferTx
 	return result, err
 }
 
+// addMoney updates the balances of two accounts within a single transaction.
+// It updates account1 then account2 in the order provided by the caller.
+// The TransferTx function orders the account IDs (by comparing FromAccountID and ToAccountID)
+// before calling addMoney to ensure a consistent lock order and prevent deadlocks.
 func addMoney(ctx context.Context, q *Queries, accountID1 int64, amount1 int64, accountID2 int64, amount2 int64) (account1 Account, account2 Account, err error) {
 	account1, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
 		ID:     accountID1,
