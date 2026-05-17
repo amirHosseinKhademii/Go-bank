@@ -37,8 +37,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: lint_format
-    env:
-      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
