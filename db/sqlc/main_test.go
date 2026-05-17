@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"os/exec"
 	"strconv"
 	"testing"
 	"time"
@@ -19,8 +20,31 @@ var testQueries *Queries
 
 var testDb *pgxpool.Pool
 
+func migrateDbDownAndUp() {
+	var err error
+
+	cmd := exec.Command("make", "-C", "../..", "migrateTestDbdown")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("cannot run migrateTestDbdown:", err)
+	}
+
+	cmd = exec.Command("make", "-C", "../..", "migrateTestDbup")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("cannot run migrateTestDbup:", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	var err error
+
+	migrateDbDownAndUp()
+
 	testDb, err = pgxpool.New(context.Background(), dbSource)
 	if err != nil {
 		log.Fatal("cannot connect to db:", err)

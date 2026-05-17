@@ -13,6 +13,10 @@ migrateup:
 	migrate -path db/migration -database "$(DB_SOURCE)" -verbose up
 migratedown:
 	migrate -path db/migration -database "$(DB_SOURCE)" -verbose down
+migrateTestDbup:
+	migrate -path db/migration -database "$(DB_TEST)" -verbose up
+migrateTestDbdown:
+	migrate -path db/migration -database "$(DB_TEST)" -verbose down -all
 sqlc:
 	sqlc generate
 test:
