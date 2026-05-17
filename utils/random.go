@@ -5,19 +5,24 @@ import (
 	"time"
 )
 
+// global random generator instance
+var globalRand *rand.Rand
+
 func init() {
-	rand.Seed(time.Now().UnixNano())
+	globalRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
+// RandomInt returns a random integer between min and max (inclusive)
 func RandomInt(min, max int64) int64 {
-	return min + rand.Int63n(max-min+1)
+	return min + globalRand.Int63n(max-min+1)
 }
 
+// RandomString returns a random string of length n
 func RandomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	result := make([]byte, n)
 	for i := range result {
-		result[i] = letters[rand.Intn(len(letters))]
+		result[i] = letters[globalRand.Intn(len(letters))]
 	}
 	return string(result)
 }
