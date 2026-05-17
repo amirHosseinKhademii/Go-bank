@@ -17,14 +17,17 @@ var dbSource = os.Getenv("DB_TEST")
 
 var testQueries *Queries
 
+var testDb *pgxpool.Pool
+
 func TestMain(m *testing.M) {
-	conn, err := pgxpool.New(context.Background(), dbSource)
+	var err error
+	testDb, err = pgxpool.New(context.Background(), dbSource)
 	if err != nil {
 		log.Fatal("cannot connect to db:", err)
 	}
-	defer conn.Close()
+	defer testDb.Close()
 
-	testQueries = New(conn)
+	testQueries = New(testDb)
 
 	m.Run()
 }
