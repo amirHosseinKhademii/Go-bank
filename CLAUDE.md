@@ -30,33 +30,17 @@ The generated package uses `pgx/v5` (`sql_package: "pgx/v5"`) and emits a `Queri
 
 **Note on schema.** The `entries` table is misspelled as `entires` in [db/migration/000001_init_schema.up.sql](db/migration/000001_init_schema.up.sql), as is the column `ammount` on `entires` and `transfers`. The Go model names (`Entry`, `Amount`) are correct because they come from the query files — be aware of the mismatch when writing raw SQL or new migrations.
 
+## Environment
 
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
-    "ANTHROPIC_AUTH_TOKEN":// openrouter key,
-    "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_MODEL": "openai/gpt-oss-120b:free",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "openai/gpt-oss-120b:free",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "openai/gpt-oss-120b:free",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "openai/gpt-oss-120b:free",
-    "ANTHROPIC_SMALL_FAST_MODEL": "openai/gpt-oss-120b:free",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "openai/gpt-oss-120b:free"
-  },
-  "permissions": {
-    "allow": [
-      "Bash(npm --version)",
-      "Read(//Users/amirhosseinkhademi/**)",
-      "Read(//Users/amirhosseinkhademi/.claude/**)",
-      "Bash(npm install *)",
-      "Bash(ccr --version)",
-      "Bash(env)",
-      "Bash(grep -vE \"^.{0,8000}claude-code-router/logs\")",
-      "Bash(curl -s https://openrouter.ai/api/v1/models)",
-      "Bash(python3 -c ' *)",
-      "Bash(go test *)",
-      "Bash(make test *)",
-      "Bash(go mod *)"
-    ]
-  }
-}
+The project uses environment variables for database connections and API keys (for AI services). See `.env.example` for reference and `.env` for actual values (which should be kept secret).
+
+- `DB_SOURCE`: Connection string for the main database (used for migrations and tests)
+- `DB_TEST`: Connection string for the test database (if needed)
+- `DB_DRIVER`: Database driver (currently set to postgresql)
+- `ANTHROPIC_API_KEY`: API key for accessing Anthropic models via OpenRouter (if applicable)
+
+## Notes
+
+- The `.env` file is automatically loaded by the Makefile via `include .env` and `export`.
+- When working with the database, ensure the Postgres container is running (if using local) or that the remote database is accessible.
+- After changing SQL in `db/query/` or `db/migration/`, run `make sqlc` to regenerate the Go code.
