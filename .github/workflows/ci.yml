@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  lint_format:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -35,10 +35,49 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.58
-          args: --timeout=5m
+          args: --timeout=5m --disable=typecheck
+
+  build:
+    runs-on: ubuntu-latest
+    needs: lint_format
+    env:
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build binary
+        run: go build -o ./bank ./cmd/main.go
 
       - name: Run tests
         run: make test
+
+  dockerize:
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3

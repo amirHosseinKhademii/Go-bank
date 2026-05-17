@@ -29,3 +29,34 @@ The generated package uses `pgx/v5` (`sql_package: "pgx/v5"`) and emits a `Queri
 **Tests.** All `*_test.go` files in [db/sqlc/](db/sqlc/) live in the generated package and exercise real SQL against a real Postgres. `TestMain` opens the pool once; per-test helpers like `createRandomAccount` insert fresh rows. Tests are not hermetic — they leave data behind and assume the schema is migrated up.
 
 **Note on schema.** The `entries` table is misspelled as `entires` in [db/migration/000001_init_schema.up.sql](db/migration/000001_init_schema.up.sql), as is the column `ammount` on `entires` and `transfers`. The Go model names (`Entry`, `Amount`) are correct because they come from the query files — be aware of the mismatch when writing raw SQL or new migrations.
+
+
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
+    "ANTHROPIC_AUTH_TOKEN":// openrouter key,
+    "ANTHROPIC_API_KEY": "",
+    "ANTHROPIC_MODEL": "openai/gpt-oss-120b:free",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "openai/gpt-oss-120b:free",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "openai/gpt-oss-120b:free",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "openai/gpt-oss-120b:free",
+    "ANTHROPIC_SMALL_FAST_MODEL": "openai/gpt-oss-120b:free",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "openai/gpt-oss-120b:free"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Read(//Users/amirhosseinkhademi/**)",
+      "Read(//Users/amirhosseinkhademi/.claude/**)",
+      "Bash(npm install *)",
+      "Bash(ccr --version)",
+      "Bash(env)",
+      "Bash(grep -vE \"^.{0,8000}claude-code-router/logs\")",
+      "Bash(curl -s https://openrouter.ai/api/v1/models)",
+      "Bash(python3 -c ' *)",
+      "Bash(go test *)",
+      "Bash(make test *)",
+      "Bash(go mod *)"
+    ]
+  }
+}
