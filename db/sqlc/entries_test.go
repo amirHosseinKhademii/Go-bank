@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -91,5 +92,5 @@ func TestDeleteEntry(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = testQueries.GetEntry(context.Background(), entry.ID)
-	require.Error(t, err)
+	require.Error(t, err, sql.ErrNoRows.Error())
 }
