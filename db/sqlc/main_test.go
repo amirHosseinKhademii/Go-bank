@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bank/utils"
 	"context"
 	"log"
 	"math/rand"
@@ -77,8 +78,11 @@ func createRandomAccount(t *testing.T) Account {
 }
 
 func createRandomUser(t *testing.T) User {
+	hashPassword, err := utils.HashPassword("secret")
+	require.NoError(t, err)
+
 	username := "random_user_" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	hashedPassword := "hashed_password"
+	hashedPassword := hashPassword
 	fullName := "Random User"
 	email := username + "@example.com"
 

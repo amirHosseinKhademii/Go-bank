@@ -34,9 +34,13 @@ func randomAccount(owner string) repository.Account {
 
 type mockStore struct {
 	*mockdb.MockQuerier
+	transferTxErr error
 }
 
 func (m *mockStore) TransferTx(ctx context.Context, arg repository.TransferTxParams) (repository.TransferTxResult, error) {
+	if m.transferTxErr != nil {
+		return repository.TransferTxResult{}, m.transferTxErr
+	}
 	return repository.TransferTxResult{}, nil
 }
 
@@ -133,6 +137,27 @@ func TestCreateAccountAPI(t *testing.T) {
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusConflict, recorder.Code)
+			},
+		},
+		{
+			name: "InvalidOwnerForeignKeyViolation",
+			body: CreateAccountRequest{
+				Owner:    "non_existent_user",
+				Currency: account.Currency,
+			},
+			buildStubs: func(store *mockdb.MockQuerier) {
+				arg := repository.CreateAccountParams{
+					Owner:    "non_existent_user",
+					Currency: account.Currency,
+					Balance:  0,
+				}
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Eq(arg)).
+					Times(1).
+					Return(repository.Account{}, mockPgForeignKeyError())
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusForbidden, recorder.Code)
 			},
 		},
 	}

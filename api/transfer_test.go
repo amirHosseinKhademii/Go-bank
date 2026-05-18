@@ -241,6 +241,50 @@ func TestCreateTransferAPI(t *testing.T) {
 				require.Equal(t, http.StatusOK, recorder.Code)
 			},
 		},
+		{
+			name: "ForeignKeyViolationError",
+			body: CreateTransferRequest{
+				FromAccountID: fromAccount.ID,
+				ToAccountID:   toAccount.ID,
+				Amount:        100,
+				Currency:      "USD",
+			},
+			buildStubs: func(store *mockdb.MockQuerier) {
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(fromAccount.ID)).
+					Times(1).
+					Return(fromAccount, nil)
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(toAccount.ID)).
+					Times(1).
+					Return(toAccount, nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusForbidden, recorder.Code)
+			},
+		},
+		{
+			name: "UniqueViolationError",
+			body: CreateTransferRequest{
+				FromAccountID: fromAccount.ID,
+				ToAccountID:   toAccount.ID,
+				Amount:        100,
+				Currency:      "USD",
+			},
+			buildStubs: func(store *mockdb.MockQuerier) {
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(fromAccount.ID)).
+					Times(1).
+					Return(fromAccount, nil)
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(toAccount.ID)).
+					Times(1).
+					Return(toAccount, nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusConflict, recorder.Code)
+			},
+		},
 	}
 
 	for i := range testCases {
@@ -252,7 +296,17 @@ func TestCreateTransferAPI(t *testing.T) {
 			mockQuerier := mockdb.NewMockQuerier(ctrl)
 			tc.buildStubs(mockQuerier)
 
-			server := NewServer(&mockStore{MockQuerier: mockQuerier})
+			store := &mockStore{MockQuerier: mockQuerier}
+
+			// Set error for specific test cases
+			switch tc.name {
+			case "ForeignKeyViolationError":
+				store.transferTxErr = mockTransferTxForeignKeyError()
+			case "UniqueViolationError":
+				store.transferTxErr = mockTransferTxUniqueViolationError()
+			}
+
+			server := NewServer(store)
 			recorder := httptest.NewRecorder()
 
 			body, err := json.Marshal(tc.body)
