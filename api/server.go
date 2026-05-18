@@ -9,11 +9,11 @@ import (
 )
 
 type Server struct {
-	store  *repository.Stor
+	store  repository.Store
 	router *gin.Engine
 }
 
-func NewServer(store *repository.Stor) *Server {
+func NewServer(store repository.Store) *Server {
 	server := &Server{
 		store: store,
 	}

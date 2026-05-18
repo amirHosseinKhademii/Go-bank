@@ -21,6 +21,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type Store interface {
+	Querier
+	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
+}
+
 type Stor struct {
 	*Queries
 	db *pgxpool.Pool // underlying connection pool

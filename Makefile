@@ -19,12 +19,26 @@ migrateup:
 	fi
 	migrate -path db/migration -database "$(DB_SOURCE)" -verbose up
 
+migrateup1:
+	@if ! command -v migrate 2>/dev/null; then \
+		echo "Installing migrate..."; \
+		go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest; \
+	fi
+	migrate -path db/migration -database "$(DB_SOURCE)" -verbose up 1
+
 migratedown:
 	@if ! command -v migrate 2>/dev/null; then \
 		echo "Installing migrate..."; \
 		go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest; \
 	fi
 	migrate -path db/migration -database "$(DB_SOURCE)" -verbose down
+
+migratedown1:
+	@if ! command -v migrate 2>/dev/null; then \
+		echo "Installing migrate..."; \
+		go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest; \
+	fi
+	migrate -path db/migration -database "$(DB_SOURCE)" -verbose down 1
 
 migrateTestDbup:
 	@if ! command -v migrate 2>/dev/null; then \
@@ -63,4 +77,4 @@ dev:
 build:
 	go build -o bin/app ./cmd/main.go
 
-.PHONY: postgres createdb dropdb migrateup migratedown test lint sqlc dev build migrateTestDbup migrateTestDbdown
+.PHONY: postgres createdb dropdb migrateup1 migratedown1 test lint sqlc dev build migrateTestDbup migrateTestDbdown

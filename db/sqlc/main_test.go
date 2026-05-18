@@ -57,18 +57,45 @@ func TestMain(m *testing.M) {
 }
 
 func createRandomAccount(t *testing.T) Account {
-	owner := "random_user_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	user := createRandomUser(t)
 	balance := int64(rand.Intn(10000))
 	currency := "USD"
 
 	arg := CreateAccountParams{
-		Owner:    owner,
+		Owner:    user.Username,
 		Balance:  balance,
 		Currency: currency,
 	}
 	account, err := testQueries.CreateAccount(context.Background(), arg)
+	require.Equal(t, user.Username, account.Owner)
+	require.Equal(t, balance, account.Balance)
+	require.Equal(t, currency, account.Currency)
 	require.NoError(t, err)
 	require.NotEmpty(t, account)
 
 	return account
+}
+
+func createRandomUser(t *testing.T) User {
+	username := "random_user_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	hashedPassword := "hashed_password"
+	fullName := "Random User"
+	email := username + "@example.com"
+
+	arg := CreateUserParams{
+		Username:       username,
+		HashedPassword: hashedPassword,
+		FullName:       fullName,
+		Email:          email,
+	}
+	user, err := testQueries.CreateUser(context.Background(), arg)
+	require.Equal(t, username, user.Username)
+	require.Equal(t, hashedPassword, user.HashedPassword)
+	require.Equal(t, fullName, user.FullName)
+	require.Equal(t, email, user.Email)
+	require.True(t, user.PasswordChangedAt.Time.IsZero())
+	require.NoError(t, err)
+	require.NotEmpty(t, user)
+
+	return user
 }
