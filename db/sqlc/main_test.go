@@ -77,12 +77,11 @@ func createRandomAccount(t *testing.T) Account {
 	return account
 }
 
-func createRandomUser(t *testing.T) User {
-	hashPassword, err := utils.HashPassword("secret")
+func createRandomUser(t *testing.T) CreateUserRow {
+	hashedPassword, err := utils.HashPassword("secret")
 	require.NoError(t, err)
 
 	username := "random_user_" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	hashedPassword := hashPassword
 	fullName := "Random User"
 	email := username + "@example.com"
 
@@ -93,13 +92,12 @@ func createRandomUser(t *testing.T) User {
 		Email:          email,
 	}
 	user, err := testQueries.CreateUser(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, user)
 	require.Equal(t, username, user.Username)
-	require.Equal(t, hashedPassword, user.HashedPassword)
 	require.Equal(t, fullName, user.FullName)
 	require.Equal(t, email, user.Email)
 	require.True(t, user.PasswordChangedAt.Time.IsZero())
-	require.NoError(t, err)
-	require.NotEmpty(t, user)
 
 	return user
 }

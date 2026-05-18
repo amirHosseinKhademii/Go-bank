@@ -7,12 +7,14 @@ package repository
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, hashed_password, full_name, email)
 VALUES ($1, $2, $3, $4)
-RETURNING username, hashed_password, full_name, email, password_changed_at, created_at
+RETURNING username, full_name, email, password_changed_at, created_at
 `
 
 type CreateUserParams struct {
@@ -22,17 +24,24 @@ type CreateUserParams struct {
 	Email          string `json:"email"`
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+type CreateUserRow struct {
+	Username          string             `json:"username"`
+	FullName          string             `json:"full_name"`
+	Email             string             `json:"email"`
+	PasswordChangedAt pgtype.Timestamptz `json:"password_changed_at"`
+	CreatedAt         pgtype.Timestamp   `json:"created_at"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
 	row := q.db.QueryRow(ctx, createUser,
 		arg.Username,
 		arg.HashedPassword,
 		arg.FullName,
 		arg.Email,
 	)
-	var i User
+	var i CreateUserRow
 	err := row.Scan(
 		&i.Username,
-		&i.HashedPassword,
 		&i.FullName,
 		&i.Email,
 		&i.PasswordChangedAt,
@@ -42,15 +51,22 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUser = `-- name: GetUser :one
-SELECT username, hashed_password, full_name, email, password_changed_at, created_at FROM users WHERE username = $1
+SELECT username, full_name, email, password_changed_at, created_at FROM users WHERE username = $1
 `
 
-func (q *Queries) GetUser(ctx context.Context, username string) (User, error) {
+type GetUserRow struct {
+	Username          string             `json:"username"`
+	FullName          string             `json:"full_name"`
+	Email             string             `json:"email"`
+	PasswordChangedAt pgtype.Timestamptz `json:"password_changed_at"`
+	CreatedAt         pgtype.Timestamp   `json:"created_at"`
+}
+
+func (q *Queries) GetUser(ctx context.Context, username string) (GetUserRow, error) {
 	row := q.db.QueryRow(ctx, getUser, username)
-	var i User
+	var i GetUserRow
 	err := row.Scan(
 		&i.Username,
-		&i.HashedPassword,
 		&i.FullName,
 		&i.Email,
 		&i.PasswordChangedAt,

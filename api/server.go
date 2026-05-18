@@ -32,6 +32,9 @@ func NewServer(store repository.Store) *Server {
 	router.GET("/transfers/:id", server.getTransfer)
 	router.GET("/transfers", server.listTransfers)
 
+	router.POST("/users", server.createUser)
+	router.GET("/users/:username", server.getUser)
+
 	server.router = router
 	return server
 }

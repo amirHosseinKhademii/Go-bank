@@ -44,6 +44,22 @@ func (m *mockStore) TransferTx(ctx context.Context, arg repository.TransferTxPar
 	return repository.TransferTxResult{}, nil
 }
 
+func (m *mockStore) CreateUser(ctx context.Context, arg repository.CreateUserParams) (repository.CreateUserRow, error) {
+	return repository.CreateUserRow{
+		Username:  arg.Username,
+		FullName:  arg.FullName,
+		Email:     arg.Email,
+	}, nil
+}
+
+func (m *mockStore) GetUser(ctx context.Context, username string) (repository.GetUserRow, error) {
+	return repository.GetUserRow{
+		Username:  username,
+		FullName:  "Test User",
+		Email:     username + "@example.com",
+	}, nil
+}
+
 func TestCreateAccountAPI(t *testing.T) {
 	account := randomAccount("test_user")
 
