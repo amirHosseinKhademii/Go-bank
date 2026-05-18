@@ -1,6 +1,39 @@
 # Kubernetes Manifests with Kustomize Overlays
 
-This directory contains Kubernetes manifests organized with Kustomize for easy management of multiple environments.
+This directory contains Kubernetes manifests organized with Kustomize for easy management of multiple environments (local minikube and AWS production).
+
+## Quick Start
+
+### For Local Minikube Testing
+
+```bash
+# 1. Start minikube with required addons
+minikube start --cpus=4 --memory=4096 --addons=ingress,metrics-server
+
+# 2. Build Docker image in minikube docker
+eval $(minikube docker-env)
+docker build -t bank-app:latest .
+
+# 3. Deploy with minikube overlay
+kubectl apply -k overlays/minikube
+
+# 4. Check pods
+kubectl get pods -n bank-app -o wide
+
+# 5. Access service
+kubectl port-forward -n bank-app svc/bank-app-service 8080:8080
+curl http://localhost:8080/health/live
+```
+
+### For AWS Production
+
+```bash
+# Deploy with production overlay (handled by CI/CD)
+kubectl apply -k overlays/production
+
+# Or let GitHub Actions deploy automatically
+git push origin main
+```
 
 ## Directory Structure
 
@@ -222,9 +255,77 @@ kubectl apply -k k8s/overlays/minikube
 **For Production:**
 Secrets are managed by GitHub Actions. Update GitHub repository secrets instead.
 
+## Important Notes
+
+### Minikube Setup Requirements
+
+1. **RBAC API**: Minikube must have RBAC enabled for ServiceAccount support
+   ```bash
+   minikube start --addons=ingress,metrics-server
+   ```
+
+2. **Docker Environment**: Build images inside minikube docker for local deployment
+   ```bash
+   eval $(minikube docker-env)
+   docker build -t bank-app:latest .
+   ```
+
+3. **Service Account**: The deployment uses `default` ServiceAccount. Custom ServiceAccounts require RBAC API to be fully enabled in minikube.
+
+4. **Image Pull Policy**: Set to `IfNotPresent` to use locally built images
+   - The overlay patches this to `Never` for minikube to ensure local images are used
+
+### Kustomize Overlays
+
+- **base/**: Shared manifests (namespace, deployment, service, ingress, network policy)
+- **overlays/minikube/**: Local development patches
+  - 1 replica
+  - Reduced resources (50m CPU, 64Mi memory)
+  - Debug mode (GIN_MODE=debug)
+  - Local database connectivity
+  - NodePort service type
+  - Disabled TLS
+
+- **overlays/production/**: AWS production patches
+  - 3 replicas for HA
+  - Standard resources (100m CPU, 128Mi memory)
+  - Release mode (GIN_MODE=release)
+  - AWS RDS database
+  - LoadBalancer service type
+  - TLS enabled
+
 ## Troubleshooting
 
-### Pod stays in Pending
+### Pod stays in Pending or ErrImageNeverPull
+
+**Solution**: Build image inside minikube docker before deploying
+
+```bash
+# Activate minikube docker environment
+eval $(minikube docker-env)
+
+# Build image (must be tagged as bank-app:latest to match deployment)
+docker build -t bank-app:latest .
+
+# Verify image is built
+docker images | grep bank
+
+# Now apply deployment
+kubectl apply -k overlays/minikube
+
+# Restart pods to pull new image
+kubectl rollout restart deployment/bank-app -n bank-app
+
+# Check pod status
+kubectl get pods -n bank-app -o wide
+```
+
+**Why this happens**: 
+- Minikube and Docker Desktop use separate container runtimes
+- Without `eval $(minikube docker-env)`, you're building in Docker Desktop, not minikube
+- When minikube tries to pull `bank-app:latest`, it doesn't find it locally
+
+### Insufficient resources
 
 ```bash
 # Check resource requests vs available
@@ -233,8 +334,9 @@ kubectl describe node
 # Check resource availability
 kubectl top nodes
 
-# Reduce resource requests in minikube overlay
-vim k8s/overlays/minikube/kustomization.yaml
+# If minikube is out of memory, increase it
+minikube stop
+minikube start --cpus=6 --memory=8192
 ```
 
 ### Database connection fails

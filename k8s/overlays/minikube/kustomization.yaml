@@ -3,33 +3,19 @@ kind: Kustomization
 
 namespace: bank-app
 
-bases:
+resources:
   - ../../base
 
-namePrefix: local-
-commonLabels:
-  environment: local
-  minikube: "true"
+labels:
+  - pairs:
+      environment: local
+      minikube: "true"
 
 replicas:
   - name: bank-app
     count: 1
 
-patchesJson6902:
-  # Disable HPA for minikube
-  - target:
-      group: autoscaling
-      version: v2
-      kind: HorizontalPodAutoscaler
-      name: bank-app-hpa
-    patch: |-
-      - op: replace
-        path: /spec/minReplicas
-        value: 1
-      - op: replace
-        path: /spec/maxReplicas
-        value: 2
-
+patches:
   # Patch deployment for minikube
   - target:
       group: apps
@@ -42,7 +28,7 @@ patchesJson6902:
         value: 1
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: IfNotPresent
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
         value: 50m
@@ -64,7 +50,6 @@ patchesJson6902:
 
   # Change service type to NodePort for minikube
   - target:
-      group: ""
       version: v1
       kind: Service
       name: bank-app-service
@@ -91,26 +76,8 @@ configMapGenerator:
   - name: bank-app-config
     envs:
       - env.properties
-    behavior: merge
 
 secretGenerator:
   - name: db-credentials
     envs:
       - db-secret.properties
-    behavior: merge
-
-vars:
-  - name: DB_HOST
-    objref:
-      kind: ConfigMap
-      name: bank-app-config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.DB_HOST
-  - name: DB_PORT
-    objref:
-      kind: ConfigMap
-      name: bank-app-config
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.DB_PORT

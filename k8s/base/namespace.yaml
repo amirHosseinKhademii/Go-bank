@@ -1,29 +1,9 @@
----
 apiVersion: v1
 kind: Namespace
 metadata:
   name: bank-app
   labels:
     name: bank-app
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: app-config
-  namespace: bank-app
-data:
-  DB_DRIVER: postgresql
-  GIN_MODE: release
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: db-credentials
-  namespace: bank-app
-type: Opaque
-stringData:
-  DB_SOURCE: "postgresql://admin:password@postgres-service:5432/bank?sslmode=disable"
-  ANTHROPIC_API_KEY: ""
 ---
 apiVersion: policy/v1
 kind: PodSecurityPolicy

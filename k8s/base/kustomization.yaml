@@ -5,9 +5,11 @@ namespace: bank-app
 
 resources:
   - namespace.yaml
+  - serviceaccount.yaml
   - deployment.yaml
   - ingress.yaml
 
-commonLabels:
-  app: bank-app
-  managed-by: kustomize
+labels:
+  - pairs:
+      app: bank-app
+      managed-by: kustomize

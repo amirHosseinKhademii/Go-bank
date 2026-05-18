@@ -3,32 +3,19 @@ kind: Kustomization
 
 namespace: bank-app
 
-bases:
+resources:
   - ../../base
 
-commonLabels:
-  environment: production
-  managed-by: terraform
+labels:
+  - pairs:
+      environment: production
+      managed-by: terraform
 
 replicas:
   - name: bank-app
     count: 3
 
-patchesJson6902:
-  # Configure HPA for production
-  - target:
-      group: autoscaling
-      version: v2
-      kind: HorizontalPodAutoscaler
-      name: bank-app-hpa
-    patch: |-
-      - op: replace
-        path: /spec/minReplicas
-        value: 3
-      - op: replace
-        path: /spec/maxReplicas
-        value: 10
-
+patches:
   # Production deployment settings
   - target:
       group: apps
@@ -53,10 +40,8 @@ configMapGenerator:
   - name: bank-app-config
     envs:
       - env.properties
-    behavior: merge
 
 secretGenerator:
   - name: db-credentials
     envs:
       - db-secret.properties
-    behavior: merge

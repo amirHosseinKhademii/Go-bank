@@ -8,7 +8,7 @@ metadata:
     app: bank-app
     version: v1
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -33,7 +33,7 @@ spec:
         fsGroup: 1000
       containers:
       - name: bank-app
-        image: bank-app:latest
+        image: amir2575/bank:latests
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
