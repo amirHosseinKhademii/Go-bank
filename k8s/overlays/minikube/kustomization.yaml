@@ -1,0 +1,116 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: bank-app
+
+bases:
+  - ../../base
+
+namePrefix: local-
+commonLabels:
+  environment: local
+  minikube: "true"
+
+replicas:
+  - name: bank-app
+    count: 1
+
+patchesJson6902:
+  # Disable HPA for minikube
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: bank-app-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+
+  # Patch deployment for minikube
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: bank-app
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 50m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 64Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 250m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 256Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
+        value: 10
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/initialDelaySeconds
+        value: 5
+
+  # Change service type to NodePort for minikube
+  - target:
+      group: ""
+      version: v1
+      kind: Service
+      name: bank-app-service
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+
+  # Disable ingress TLS for local testing
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: bank-app-ingress
+    patch: |-
+      - op: replace
+        path: /spec/tls
+        value: []
+      - op: replace
+        path: /spec/ingressClassName
+        value: nginx
+
+configMapGenerator:
+  - name: bank-app-config
+    envs:
+      - env.properties
+    behavior: merge
+
+secretGenerator:
+  - name: db-credentials
+    envs:
+      - db-secret.properties
+    behavior: merge
+
+vars:
+  - name: DB_HOST
+    objref:
+      kind: ConfigMap
+      name: bank-app-config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.DB_HOST
+  - name: DB_PORT
+    objref:
+      kind: ConfigMap
+      name: bank-app-config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.DB_PORT

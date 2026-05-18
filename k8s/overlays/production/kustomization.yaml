@@ -1,0 +1,62 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: bank-app
+
+bases:
+  - ../../base
+
+commonLabels:
+  environment: production
+  managed-by: terraform
+
+replicas:
+  - name: bank-app
+    count: 3
+
+patchesJson6902:
+  # Configure HPA for production
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: bank-app-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+
+  # Production deployment settings
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: bank-app
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
+        value: 30
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/initialDelaySeconds
+        value: 10
+
+configMapGenerator:
+  - name: bank-app-config
+    envs:
+      - env.properties
+    behavior: merge
+
+secretGenerator:
+  - name: db-credentials
+    envs:
+      - db-secret.properties
+    behavior: merge
