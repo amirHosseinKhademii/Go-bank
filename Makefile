@@ -77,4 +77,7 @@ dev:
 build:
 	go build -o bin/app ./cmd/main.go
 
-.PHONY: postgres createdb dropdb migrateup1 migratedown1 test lint sqlc dev build migrateTestDbup migrateTestDbdown
+validate-infra:
+	./scripts/validate-infrastructure.sh
+
+.PHONY: postgres createdb dropdb migrateup1 migratedown1 test lint sqlc dev build migrateTestDbup migrateTestDbdown validate-infra
