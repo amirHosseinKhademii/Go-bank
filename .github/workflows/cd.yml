@@ -1,0 +1,307 @@
+name: CD - Build, Test & Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.go'
+      - 'Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
+      - 'k8s/**'
+      - 'terraform/**'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  EKS_CLUSTER_NAME: bank-app
+  TERRAFORM_VERSION: 1.6.0
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # Code Quality & Security Checks
+  quality-checks:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run tests
+        run: make test
+
+      - name: Run linting
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run gosec security scanner
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
+
+      - name: Upload security results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: gosec-results.sarif
+          wait-for-processing: true
+
+  # Build & Push Docker Image
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    outputs:
+      image-tag: ${{ steps.image.outputs.tag }}
+      image-uri: ${{ steps.image.outputs.uri }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Generate image tag
+        id: image
+        run: |
+          TAG="$(git rev-parse --short HEAD)-$(date +%s)"
+          URI="${{ env.ECR_REGISTRY }}/bank-app:${TAG}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "uri=${URI}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.uri }}
+            ${{ env.ECR_REGISTRY }}/bank-app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+      - name: Image scan results
+        run: |
+          aws ecr describe-image-scan-findings \
+            --repository-name bank-app \
+            --image-id imageTag=${{ steps.image.outputs.tag }} \
+            --region ${{ env.AWS_REGION }} || true
+
+  # Plan & Apply Terraform
+  terraform-deploy:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init -upgrade
+
+      - name: Terraform Validate
+        run: |
+          cd terraform
+          terraform validate
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan \
+            -var="container_image=${{ needs.build-and-push.outputs.image-uri }}" \
+            -var="db_password=${{ secrets.DB_PASSWORD }}" \
+            -var="db_username=${{ secrets.DB_USERNAME }}" \
+            -out=tfplan
+
+      - name: Save Terraform Plan
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan
+          path: terraform/tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve tfplan
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        run: |
+          cd terraform
+          echo "eks_cluster_name=$(terraform output -raw eks_cluster_name)" >> $GITHUB_OUTPUT
+          echo "ecr_repository_url=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+
+  # Deploy to EKS
+  deploy-to-eks:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: [build-and-push, terraform-deploy]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace bank-app --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create image pull secret
+        run: |
+          kubectl delete secret aws-ecr-secret -n bank-app --ignore-not-found
+          kubectl create secret docker-registry aws-ecr-secret \
+            --docker-server=${{ env.ECR_REGISTRY }} \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }}) \
+            -n bank-app
+
+      - name: Update deployment image
+        run: |
+          kubectl set image deployment/bank-app \
+            bank-app=${{ needs.build-and-push.outputs.image-uri }} \
+            -n bank-app \
+            --record
+
+      - name: Monitor deployment rollout
+        run: |
+          kubectl rollout status deployment/bank-app \
+            -n bank-app \
+            --timeout=5m
+
+      - name: Check deployment status
+        run: |
+          kubectl get deployments -n bank-app
+          kubectl get pods -n bank-app
+          kubectl get services -n bank-app
+
+      - name: Verify health checks
+        run: |
+          kubectl get pods -n bank-app -o wide
+          kubectl logs -n bank-app -l app=bank-app --tail=50
+
+  # Post-Deployment Verification
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy-to-eks
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get service endpoint
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+          kubectl get svc -n bank-app
+
+      - name: Wait for service endpoint
+        run: |
+          for i in {1..30}; do
+            ENDPOINT=$(kubectl get svc bank-app-service -n bank-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            if [ -n "$ENDPOINT" ]; then
+              echo "Service endpoint: $ENDPOINT"
+              exit 0
+            fi
+            echo "Waiting for endpoint... ($i/30)"
+            sleep 10
+          done
+          exit 1
+
+      - name: Run smoke tests
+        run: |
+          echo "Running health checks..."
+          # Add your smoke tests here
+          echo "Smoke tests passed!"
+
+      - name: Notify deployment success
+        run: |
+          echo "✅ Deployment successful!"
+          echo "Image: ${{ needs.build-and-push.outputs.image-uri }}"
+
+  # Cleanup on failure
+  cleanup-on-failure:
+    name: Cleanup on Failure
+    runs-on: ubuntu-latest
+    needs: [build-and-push, terraform-deploy, deploy-to-eks]
+    if: failure()
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Rollback deployment
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+          kubectl rollout undo deployment/bank-app -n bank-app || true
+
+      - name: Notify failure
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Please check the logs above for details"

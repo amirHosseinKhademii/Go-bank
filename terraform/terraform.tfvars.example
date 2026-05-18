@@ -1,0 +1,20 @@
+aws_region           = "us-east-1"
+environment          = "production"
+app_name             = "bank-app"
+vpc_cidr             = "10.0.0.0/16"
+container_port       = 8080
+container_image      = "your-account-id.dkr.ecr.us-east-1.amazonaws.com/bank-app:latest"
+db_username          = "admin"
+db_password          = "ChangeThisPassword123!"
+eks_desired_size     = 3
+eks_min_size         = 1
+eks_max_size         = 10
+instance_types       = ["t3.medium"]
+enable_logging       = true
+
+tags = {
+  Environment = "production"
+  ManagedBy   = "terraform"
+  Project     = "bank-api"
+  Team        = "platform"
+}
