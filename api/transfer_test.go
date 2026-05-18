@@ -13,6 +13,7 @@ import (
 	mockdb "bank/db/mocks"
 	repository "bank/db/sqlc"
 	"github.com/golang/mock/gomock"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
@@ -496,4 +497,12 @@ func requireBodyMatchTransfers(t *testing.T, body *bytes.Buffer, transfers []rep
 		require.Equal(t, transfers[i].ToAccountID, gotTransfers[i].ToAccountID)
 		require.Equal(t, transfers[i].Amount, gotTransfers[i].Amount)
 	}
+}
+
+func mockTransferTxUniqueViolationError() error {
+	return &pgconn.PgError{Code: "23505"}
+}
+
+func mockTransferTxForeignKeyError() error {
+	return &pgconn.PgError{Code: "23503"}
 }

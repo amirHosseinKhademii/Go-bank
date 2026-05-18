@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type CreateAccountRequest struct {
@@ -28,6 +29,16 @@ func (server *Server) createAccount(ctx *gin.Context) {
 
 	account, err := server.store.CreateAccount(ctx, arg)
 	if err != nil {
+		if pgErr, ok := err.(*pgconn.PgError); ok {
+			switch pgErr.SQLState() {
+			case "23503": // foreign_key_violation
+				ctx.JSON(http.StatusForbidden, errorResponse(err))
+				return
+			case "23505": // unique_violation
+				ctx.JSON(http.StatusConflict, errorResponse(err))
+				return
+			}
+		}
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return
 	}

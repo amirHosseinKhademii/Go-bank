@@ -14,6 +14,7 @@ import (
 	mockdb "bank/db/mocks"
 	repository "bank/db/sqlc"
 	"github.com/golang/mock/gomock"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
@@ -111,6 +112,27 @@ func TestCreateAccountAPI(t *testing.T) {
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name: "DuplicateAccount",
+			body: CreateAccountRequest{
+				Owner:    account.Owner,
+				Currency: account.Currency,
+			},
+			buildStubs: func(store *mockdb.MockQuerier) {
+				arg := repository.CreateAccountParams{
+					Owner:    account.Owner,
+					Currency: account.Currency,
+					Balance:  0,
+				}
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Eq(arg)).
+					Times(1).
+					Return(repository.Account{}, mockPgUniqueViolationError())
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusConflict, recorder.Code)
 			},
 		},
 	}
@@ -334,4 +356,12 @@ func requireBodyMatchAccounts(t *testing.T, body *bytes.Buffer, accounts []repos
 		require.Equal(t, accounts[i].Balance, gotAccounts[i].Balance)
 		require.Equal(t, accounts[i].Currency, gotAccounts[i].Currency)
 	}
+}
+
+func mockPgUniqueViolationError() error {
+	return &pgconn.PgError{Code: "23505"}
+}
+
+func mockPgForeignKeyError() error {
+	return &pgconn.PgError{Code: "23503"}
 }
