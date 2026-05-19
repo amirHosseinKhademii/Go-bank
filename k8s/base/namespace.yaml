@@ -4,35 +4,43 @@ metadata:
   name: bank-app
   labels:
     name: bank-app
+     # Enforce the most restrictive Pod Security Standard. Pods that don't comply
+    # (e.g. root user, missing seccomp profile, capabilities not dropped) will be
+    # rejected by the API server. See:
+    # https://kubernetes.io/docs/concepts/security/pod-security-standards/
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
 ---
-apiVersion: policy/v1
-kind: PodSecurityPolicy
-metadata:
-  name: restricted
-spec:
-  privileged: false
-  allowPrivilegeEscalation: false
-  requiredDropCapabilities:
-    - ALL
-  volumes:
-    - 'configMap'
-    - 'emptyDir'
-    - 'projected'
-    - 'secret'
-    - 'downwardAPI'
-    - 'persistentVolumeClaim'
-  hostNetwork: false
-  hostIPC: false
-  hostPID: false
-  runAsUser:
-    rule: 'MustRunAsNonRoot'
-  seLinux:
-    rule: 'MustRunAs'
-    seLinuxOptions:
-      level: "s0:c123,c456"
-  fsGroup:
-    rule: 'MustRunAs'
-    ranges:
-      - min: 1
-        max: 65535
-  readOnlyRootFilesystem: false
+# apiVersion: policy/v1
+# kind: PodSecurityPolicy
+# metadata:
+#   name: restricted
+# spec:
+#   privileged: false
+#   allowPrivilegeEscalation: false
+#   requiredDropCapabilities:
+#     - ALL
+#   volumes:
+#     - 'configMap'
+#     - 'emptyDir'
+#     - 'projected'
+#     - 'secret'
+#     - 'downwardAPI'
+#     - 'persistentVolumeClaim'
+#   hostNetwork: false
+#   hostIPC: false
+#   hostPID: false
+#   runAsUser:
+#     rule: 'MustRunAsNonRoot'
+#   seLinux:
+#     rule: 'MustRunAs'
+#     seLinuxOptions:
+#       level: "s0:c123,c456"
+#   fsGroup:
+#     rule: 'MustRunAs'
+#     ranges:
+#       - min: 1
+#         max: 65535
+#   readOnlyRootFilesystem: false

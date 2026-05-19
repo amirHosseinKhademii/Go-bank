@@ -1,0 +1,27 @@
+---
+# web: static SPA. Public traffic enters via the ingress controller only.
+# No egress: the pod just serves files; the SPA in the browser calls /graphql
+# through the Ingress, not from inside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bank-api
+  namespace: bank-app
+spec:
+  podSelector:
+    matchLabels:
+      app: bank-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+  egress: []
+
+---

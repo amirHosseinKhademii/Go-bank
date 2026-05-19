@@ -1,68 +1,89 @@
+
+
+# web: static SPA. Public traffic enters via the ingress controller only.
+# No egress: the pod just serves files; the SPA in the browser calls /graphql
+# through the Ingress, not from inside the cluster.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: bank-app-network-policy
+  name: bank-api-network-policy
   namespace: bank-app
 spec:
   podSelector:
     matchLabels:
-      app: bank-app
+      app: bank-api
   policyTypes:
-  - Ingress
-  - Egress
+    - Ingress
+    - Egress
   ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    - namespaceSelector:
-        matchLabels:
-          name: bank-app
-    ports:
-    - protocol: TCP
-      port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
   egress:
-  - to:
-    - namespaceSelector: {}
-    ports:
-    - protocol: TCP
-      port: 5432
-    - protocol: TCP
-      port: 443
-    - protocol: TCP
-      port: 80
-  - to:
-    - podSelector:
-        matchLabels:
-          k8s-app: kube-dns
-    ports:
-    - protocol: UDP
-      port: 53
+    - to:
+      - namespaceSelector: {}
+      ports:
+      - protocol: TCP
+        port: 5432
+      - protocol: TCP
+        port: 443
+      - protocol: TCP
+        port: 80
+    - to:
+      - podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+      ports:
+      - protocol: UDP
+        port: 53
+
 ---
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: bank-app-ingress
+  name: bank-api-ingress
   namespace: bank-app
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt
+    # ── TLS / transport hardening ─────────────────────────────────────────
+    # nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+    # nginx.ingress.kubernetes.io/hsts: 'true'
+    # nginx.ingress.kubernetes.io/hsts-max-age: '31536000'
+    # nginx.ingress.kubernetes.io/hsts-include-subdomains: 'true'
+    # nginx.ingress.kubernetes.io/hsts-preload: 'true'
+    # ── Body / timeout limits ─────────────────────────────────────────────
+    nginx.ingress.kubernetes.io/proxy-body-size: '1m'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '30'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '30'
+    # ── Rate limit GraphQL surface (per source IP) ────────────────────────
+    nginx.ingress.kubernetes.io/limit-rps: '20'
+    nginx.ingress.kubernetes.io/limit-connections: '20'
+    # NOTE: Security headers (X-Content-Type-Options, X-Frame-Options,
+    # Referrer-Policy, Permissions-Policy, COOP/CORP) are added at the source:
+    #   - /        → apps/web/nginx.conf  (add_header directives)
+    #   - /graphql → api-gateway via Helmet (apps/api-gateway/src/main.ts)
+    # That avoids the configuration-snippet annotation, which modern
+    # ingress-nginx releases reject by default (CVE-2021-25742 mitigation).
 spec:
   ingressClassName: nginx
-  tls:
-  - hosts:
-    - api.bank.example.com
-    secretName: bank-app-tls
+  # tls:
+  #   - hosts:
+  #       - bank.example.com
+  #     secretName: bank-tls
   rules:
-  - host: api.bank.example.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: bank-app-service
-            port:
-              number: 80
+    - host: bank.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bank-api
+                port:
+                  number: 3000

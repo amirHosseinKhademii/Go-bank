@@ -1,83 +1,43 @@
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-namespace: bank-app
 
 resources:
   - ../../base
 
-labels:
-  - pairs:
-      environment: local
-      minikube: "true"
-
-replicas:
-  - name: bank-app
-    count: 1
+# For local dev we generally want the newest pushed images. The production base
+# pins to immutable short-SHA tags; this overlay overrides them to `main`.
+images:
+  - name: docker.io/amir2575/bank
+    newTag: latest
 
 patches:
-  # Patch deployment for minikube
+  # ── Disable hostname requirement for minikube (HTTP-only environment) ────
   - target:
-      group: apps
-      version: v1
+      kind: Ingress
+      name: bank-api-ingress
+    patch: |-
+      - op: remove
+        path: /spec/rules/0/host
+
+  # ── Scale every deployment to 1 replica to fit a laptop-sized cluster ──
+  # We use a strategic-merge patch and a label selector so this single
+  # patch applies to every Deployment in the base.
+  - target:
       kind: Deployment
-      name: bank-app
     patch: |-
       - op: replace
         path: /spec/replicas
         value: 1
+
+  # ── Force a fresh image pull on every Pod restart ──────────────────────
+  # Minikube reuses cached images by default (`IfNotPresent`). When you want
+  # "always pull whatever is currently in the registry tag", flip to `Always`.
+  - target:
+      kind: Deployment
+      name: bank-api
+    patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: IfNotPresent
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 50m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 64Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 250m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 256Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
-        value: 10
-      - op: replace
-        path: /spec/template/spec/containers/0/readinessProbe/initialDelaySeconds
-        value: 5
+        value: Always
 
-  # Change service type to NodePort for minikube
-  - target:
-      version: v1
-      kind: Service
-      name: bank-app-service
-    patch: |-
-      - op: replace
-        path: /spec/type
-        value: NodePort
-
-  # Disable ingress TLS for local testing
-  - target:
-      group: networking.k8s.io
-      version: v1
-      kind: Ingress
-      name: bank-app-ingress
-    patch: |-
-      - op: replace
-        path: /spec/tls
-        value: []
-      - op: replace
-        path: /spec/ingressClassName
-        value: nginx
-
-configMapGenerator:
-  - name: bank-app-config
-    envs:
-      - env.properties
-
-secretGenerator:
-  - name: db-credentials
-    envs:
-      - db-secret.properties

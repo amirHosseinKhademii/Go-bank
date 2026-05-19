@@ -1,15 +1,29 @@
+# Kustomize entry point. Apply with:
+#
+#   kubectl apply -k infra/k8s/
+#
+# CI bumps the `images[*].newTag` field below to the immutable short-SHA tag
+# pushed by the CD pipeline (.github/workflows/cd.yml or
+# azure-pipelines-cd.yml). Anything applying this overlay (manual
+# `kubectl apply -k`, ArgoCD, Flux, ...) will pick up the new tags
+# automatically.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: bank-app
-
 resources:
-  - namespace.yaml
-  - serviceaccount.yaml
-  - deployment.yaml
-  - ingress.yaml
+- namespace.yaml
+- deployment.yaml
+- ingress.yaml
+# Note: `shop-app-secrets` is NOT applied from a manifest in this repo.
+# It is created by the `seed-secrets` job in `.github/workflows/cd.yml`
+# from GitHub Repository Secrets, before this kustomization is applied.
+# For a one-off manual deploy, copy `secrets.example.yaml` to
+# `secrets.yaml` (gitignored), then `kubectl apply -f secrets.yaml`
+# before `kubectl apply -k .`.
 
-labels:
-  - pairs:
-      app: bank-app
-      managed-by: kustomize
+# `name` here matches the `image:` field in the deployment YAMLs.
+# `newName` is the registry path; `newTag` is bumped by CI.
+images:
+- name: docker.io/amir2575/bank
+  newName: docker.io/amir2575/bank
+  newTag: sha-b7dca26

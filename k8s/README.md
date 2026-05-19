@@ -20,10 +20,7 @@ kubectl apply -k overlays/minikube
 # 4. Check pods
 kubectl get pods -n bank-app -o wide
 
-# 5. Access service
-kubectl port-forward -n bank-app svc/bank-app-service 8080:8080
-curl http://localhost:8080/health/live
-```
+
 
 ### For AWS Production
 
@@ -106,7 +103,7 @@ kubectl apply -k k8s/overlays/production
 - Reduced HPA: 1-2 replicas (vs 3-10 in production)
 - No ingress TLS
 - NGINX ingress class
-- Local service naming: `local-bank-app-service`
+- Local service naming: `local-bank-app`
 
 ## Production Overlay Features
 
@@ -180,8 +177,6 @@ kubectl rollout status deployment/local-bank-app -n bank-app --timeout=2m
 # Get service info
 kubectl get svc -n bank-app
 
-# Port forward to local machine
-kubectl port-forward -n bank-app svc/local-bank-app-service 8080:8080
 
 # Test API
 curl http://localhost:8080/health/live
@@ -378,8 +373,7 @@ kubectl describe ingress -n bank-app
 # Verify NGINX ingress controller is running
 kubectl get pods -n ingress-nginx
 
-# Test with port-forward instead
-kubectl port-forward -n bank-app svc/local-bank-app-service 8080:8080
+
 ```
 
 ## Comparison: Minikube vs Production
@@ -424,3 +418,6 @@ kubectl delete -k k8s/overlays/minikube
 - [Kustomize Documentation](https://kubectl.docs.kubernetes.io/docs/tasks/manage-kubernetes-objects/declarative-config/)
 - [Minikube Documentation](https://minikube.sigs.k8s.io/)
 - [kubectl Kustomize Guide](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)
+
+
+minikube -n ingress-nginx service ingress-nginx-controller  --url 
