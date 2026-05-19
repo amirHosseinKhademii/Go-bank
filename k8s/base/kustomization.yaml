@@ -26,4 +26,4 @@ resources:
 images:
 - name: docker.io/amir2575/bank
   newName: docker.io/amir2575/bank
-  newTag: sha-47b5ae9
+  newTag: sha-99c9ea0
