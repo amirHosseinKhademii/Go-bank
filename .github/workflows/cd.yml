@@ -238,14 +238,11 @@ jobs:
       - name: Validate required Secrets are set
         env:
           AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          DB_SOURCE: ${{ secrets.DB_SOURCE }}
         run: |
           set -euo pipefail
           missing=()
-          for v in AWS_ROLE_TO_ASSUME DATABASE_URL MONGO_URI REDIS_URL JWT_SECRET; do
+          for v in AWS_ROLE_TO_ASSUME DB_SOURCE; do
             if [ -z "${!v}" ]; then
               missing+=("$v")
             fi
@@ -269,7 +266,7 @@ jobs:
 
       - name: Apply bank-app-secrets (idempotent)
         env:
-          DB_SOURCE: ${{ secrets.DATABASE_URL }}
+          DB_SOURCE: ${{ secrets.DB_SOURCE }}
         run: |
           set -euo pipefail
           args=(
