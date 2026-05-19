@@ -24,6 +24,7 @@ import (
 type Store interface {
 	Querier
 	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
+	Ping(ctx context.Context) error
 }
 
 type Stor struct {
@@ -36,6 +37,10 @@ func NewStore(db *pgxpool.Pool) *Stor {
 		Queries: New(db),
 		db:      db,
 	}
+}
+
+func (s *Stor) Ping(ctx context.Context) error {
+	return s.db.Ping(ctx)
 }
 
 // execTx runs a function within a database transaction and handles commit or rollback.

@@ -24,6 +24,9 @@ func NewServer(store repository.Store) *Server {
 		v.RegisterValidation("currency", validCurrency)
 	}
 
+	router.GET("/healthz", server.liveness)
+	router.GET("/readyz", server.readiness)
+
 	router.POST("/accounts", server.createAccount)
 	router.GET("/accounts/:id", server.getAccount)
 	router.GET("/accounts", server.listAccounts)
@@ -41,6 +44,19 @@ func NewServer(store repository.Store) *Server {
 
 func (server *Server) Start(address string) error {
 	return server.router.Run(address)
+}
+
+func (server *Server) liveness(ctx *gin.Context) {
+	ctx.JSON(200, gin.H{"status": "alive"})
+}
+
+func (server *Server) readiness(ctx *gin.Context) {
+	err := server.store.Ping(ctx)
+	if err != nil {
+		ctx.JSON(503, gin.H{"status": "not ready", "error": err.Error()})
+		return
+	}
+	ctx.JSON(200, gin.H{"status": "ready"})
 }
 
 func errorResponse(err error) gin.H {

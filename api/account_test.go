@@ -44,6 +44,10 @@ func (m *mockStore) TransferTx(ctx context.Context, arg repository.TransferTxPar
 	return repository.TransferTxResult{}, nil
 }
 
+func (m *mockStore) Ping(ctx context.Context) error {
+	return nil
+}
+
 func (m *mockStore) CreateUser(ctx context.Context, arg repository.CreateUserParams) (repository.CreateUserRow, error) {
 	return repository.CreateUserRow{
 		Username:  arg.Username,
