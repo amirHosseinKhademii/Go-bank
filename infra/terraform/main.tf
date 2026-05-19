@@ -134,9 +134,7 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   cluster_addons = {
-    # coredns temporarily disabled — nodes are still initializing
-    # Re-enable after nodes are ACTIVE: uncomment line below
-    # coredns                = {}
+    coredns                = {}
     kube-proxy             = {}
     vpc-cni                = {}
     eks-pod-identity-agent = {}
