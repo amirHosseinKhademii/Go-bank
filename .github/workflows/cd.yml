@@ -1,373 +1,442 @@
-name: CD - Build, Test, Deploy to EKS
+# 
+name: CD
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '**.go'
-      - 'Dockerfile'
-      - 'go.mod'
-      - 'go.sum'
-      - 'k8s/**'
-      - '.github/workflows/cd.yml'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
-
-env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-  EKS_CLUSTER_NAME: bank-app
-  EKS_NAMESPACE: bank-app
-  IMAGE_NAME: bank-app
+    inputs:
+      reason:
+        description: 'Why are you running CD manually? (shows up in logs)'
+        required: false
+        default: 'manual deploy'
 
 permissions:
-  id-token: write
   contents: read
 
+concurrency:
+  group: cd-${{ github.event.workflow_run.head_branch || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  # Code Quality & Security Checks
-  quality-checks:
-    name: Code Quality & Security
-    runs-on: ubuntu-latest
+  # ─── 1. Build + push every service image in parallel ─────────────────────
+  docker:
+    name: Build & push · bank-app
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       (github.event.workflow_run.head_branch == 'main' ||
+        startsWith(github.event.workflow_run.head_branch, 'v')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write     # future-proof for GHCR push
+    strategy:
+      fail-fast: false
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.25'
-          cache: true
-
-      - name: Run tests
-        run: make test
-
-      - name: Run linting
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: latest
-          args: --timeout=5m
-
-      - name: Run gosec security scanner
-        uses: securego/gosec@master
-        with:
-          args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
-
-      - name: Upload security results
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: gosec-results.sarif
-          wait-for-processing: true
-
-  # Build & Push Docker Image to ECR
-  build-and-push:
-    name: Build & Push to ECR
-    runs-on: ubuntu-latest
-    needs: quality-checks
-    outputs:
-      image-tag: ${{ steps.image.outputs.tag }}
-      image-uri: ${{ steps.image.outputs.uri }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Generate image tag
-        id: image
+      - name: Resolve commit SHA + branch
+        id: ctx
         run: |
-          TAG="$(git rev-parse --short HEAD)-$(date +%s)"
-          URI="${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}"
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "uri=${URI}" >> $GITHUB_OUTPUT
-          echo "Image URI: ${URI}"
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            SHA="${{ github.sha }}"
+            BRANCH="${{ github.ref_name }}"
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            BRANCH="${{ github.event.workflow_run.head_branch }}"
+          fi
+          {
+            echo "sha=$SHA"
+            echo "branch=$BRANCH"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+      - name: Checkout (commit ${{ steps.ctx.outputs.sha }})
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.ctx.outputs.sha }}
+
+      - name: Resolve Docker Hub namespace
+        id: ns
+        env:
+          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOCKERHUB_NAMESPACE" ]; then
+            echo "::error::Set repo variable DOCKERHUB_NAMESPACE or secret DOCKERHUB_USERNAME"
+            exit 1
+          fi
+          echo "namespace=$DOCKERHUB_NAMESPACE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ns.outputs.namespace }}/bank
+          tags: |
+            type=sha,format=short,prefix=sha-,sha=${{ steps.ctx.outputs.sha }}
+            type=raw,value=${{ steps.ctx.outputs.branch }}
+            type=raw,value=latest,enable=${{ steps.ctx.outputs.branch == 'main' }}
+
+      - name: Build & push
+        id: push
+        uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
-          tags: |
-            ${{ steps.image.outputs.uri }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ github.sha }}
-            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=bank
+          cache-to: type=gha,mode=max,scope=bank
+          provenance: false
 
-      - name: Image vulnerability scan
+      - name: Job summary
+        if: always()
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
-          echo "Scanning image for vulnerabilities..."
-          aws ecr describe-image-scan-findings \
-            --repository-name ${{ env.IMAGE_NAME }} \
-            --image-id imageTag=${{ steps.image.outputs.tag }} \
-            --region ${{ env.AWS_REGION }} || echo "Scan in progress or not available yet"
+          set -euo pipefail
+          {
+            echo "## docker · bank → **${{ job.status }}**"
+            echo ""
+            echo "Tags pushed:"
+            echo ""
+            echo "$TAGS" | sed 's|^|- `|;s|$|`|'
+            if [ -n "$DIGEST" ]; then
+              echo ""
+              echo "Digest: \`$DIGEST\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # Deploy to EKS
-  deploy-to-eks:
-    name: Deploy to EKS
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    environment:
-      name: production
-      url: https://bank-api.example.com
+  # ─── 2. Bump kustomization image tags + commit back to main ──────────────
+  update-manifests:
+    name: Bump k8s image tags
+    needs: docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write     # to push the bump commit back to main
+    outputs:
+      bumped_sha: ${{ steps.commit.outputs.bump_sha }}
+      tag: ${{ steps.tag.outputs.value }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout main
+        uses: actions/checkout@v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      - name: Update kubeconfig
+      - name: Resolve Docker Hub namespace
+        id: ns
+        env:
+          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
         run: |
-          aws eks update-kubeconfig \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --region ${{ env.AWS_REGION }}
-          echo "Kubeconfig updated for cluster: ${{ env.EKS_CLUSTER_NAME }}"
+          set -euo pipefail
+          if [ -z "$DOCKERHUB_NAMESPACE" ]; then
+            echo "::error::Set repo variable DOCKERHUB_NAMESPACE or secret DOCKERHUB_USERNAME"
+            exit 1
+          fi
+          echo "namespace=$DOCKERHUB_NAMESPACE" >> "$GITHUB_OUTPUT"
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: '5.4.3'
 
-      - name: Create namespace if not exists
+      - name: Compute tag
+        id: tag
         run: |
-          kubectl create namespace ${{ env.EKS_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          echo "Namespace ready: ${{ env.EKS_NAMESPACE }}"
-
-      - name: Create/Update database secret
-        run: |
-          kubectl delete secret db-credentials -n ${{ env.EKS_NAMESPACE }} --ignore-not-found
-          kubectl create secret generic db-credentials \
-            --from-literal=username=${{ secrets.DB_USERNAME }} \
-            --from-literal=password=${{ secrets.DB_PASSWORD }} \
-            --from-literal=host=${{ secrets.DB_HOST }} \
-            --from-literal=port=${{ secrets.DB_PORT }} \
-            --from-literal=name=${{ secrets.DB_NAME }} \
-            -n ${{ env.EKS_NAMESPACE }}
-          echo "Database credentials secret created"
-
-      - name: Create ECR image pull secret
-        run: |
-          kubectl delete secret aws-ecr-secret -n ${{ env.EKS_NAMESPACE }} --ignore-not-found
-          kubectl create secret docker-registry aws-ecr-secret \
-            --docker-server=${{ env.ECR_REGISTRY }} \
-            --docker-username=AWS \
-            --docker-password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }}) \
-            -n ${{ env.EKS_NAMESPACE }}
-          echo "ECR image pull secret created"
-
-      - name: Update deployment image
-        run: |
-          kubectl set image deployment/${{ env.IMAGE_NAME }} \
-            ${{ env.IMAGE_NAME }}=${{ needs.build-and-push.outputs.image-uri }} \
-            -n ${{ env.EKS_NAMESPACE }} \
-            --record
-          echo "Deployment image updated to: ${{ needs.build-and-push.outputs.image-uri }}"
-
-      - name: Monitor deployment rollout
-        run: |
-          echo "Waiting for deployment rollout (max 5 minutes)..."
-          kubectl rollout status deployment/${{ env.IMAGE_NAME }} \
-            -n ${{ env.EKS_NAMESPACE }} \
-            --timeout=5m
-          echo "Rollout completed successfully"
-
-      - name: Verify deployment status
-        run: |
-          echo "=== Deployment Status ==="
-          kubectl get deployments -n ${{ env.EKS_NAMESPACE }}
-
-          echo ""
-          echo "=== Pod Status ==="
-          kubectl get pods -n ${{ env.EKS_NAMESPACE }} -o wide
-
-          echo ""
-          echo "=== Service Status ==="
-          kubectl get services -n ${{ env.EKS_NAMESPACE }}
-
-      - name: Check pod health
-        run: |
-          echo "=== Checking Pod Health ==="
-          kubectl get pods -n ${{ env.EKS_NAMESPACE }} -o wide
-
-          echo ""
-          echo "=== Recent Pod Logs ==="
-          kubectl logs -n ${{ env.EKS_NAMESPACE }} \
-            -l app=${{ env.IMAGE_NAME }} \
-            --tail=50 \
-            --all-containers=true || echo "No logs available yet"
-
-      - name: Verify API endpoints
-        run: |
-          echo "Checking API health endpoints..."
-
-          # Get service endpoint
-          SERVICE_IP=$(kubectl get svc ${{ env.IMAGE_NAME }}-service \
-            -n ${{ env.EKS_NAMESPACE }} \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || \
-            kubectl get svc ${{ env.IMAGE_NAME }}-service \
-            -n ${{ env.EKS_NAMESPACE }} \
-            -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-
-          if [ -z "$SERVICE_IP" ]; then
-            echo "Warning: Service endpoint not ready yet"
-            echo "Service details:"
-            kubectl describe svc ${{ env.IMAGE_NAME }}-service -n ${{ env.EKS_NAMESPACE }}
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            SHA="${{ github.sha }}"
           else
-            echo "Service endpoint: $SERVICE_IP"
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          fi
+          SHORT="${SHA:0:7}"
+          echo "value=sha-${SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump image tags
+        working-directory: k8s/base
+        env:
+          NS: ${{ steps.ns.outputs.namespace }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          kustomize edit set image \
+            "docker.io/${NS}/bank=docker.io/${NS}/bank:${TAG}"
+          echo "── kustomization.yaml after bump ──"
+          cat kustomization.yaml
+
+      - name: Commit & push
+        id: commit
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet k8s/base/kustomization.yaml; then
+            echo "::notice::Image tags already at ${TAG} — no commit needed."
+            {
+              echo "## Manifest bump → **skipped**"
+              echo ""
+              echo "Image tags in \`k8s/base/kustomization.yaml\` already point at \`${TAG}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/base/kustomization.yaml
+          git commit -m "chore(k8s): bump image tags to ${TAG} [skip ci]"
+          git push origin HEAD:main
+          BUMP=$(git rev-parse HEAD)
+          echo "bump_sha=$BUMP" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Manifest bump → **committed**"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| New tag       | \`${TAG}\` |"
+            echo "| Bump commit   | \`${BUMP:0:7}\` (full: \`$BUMP\`) |"
+            echo "| Pushed to     | \`main\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ─── 3. Seed bank-app-secrets in the cluster from GH Secrets ─────────────
+  seed-secrets:
+    name: Seed cluster secrets
+    needs: update-manifests
+    if: vars.EKS_CLUSTER_NAME != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write     # OIDC -> AWS IAM role assumption
+      contents: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Validate required Secrets are set
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in AWS_ROLE_TO_ASSUME DATABASE_URL MONGO_URI REDIS_URL JWT_SECRET; do
+            if [ -z "${!v}" ]; then
+              missing+=("$v")
+            fi
+          done
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing required Secrets: ${missing[*]}"
+            echo "::error::Set them in Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "All required Secrets present."
+
+      - name: Configure AWS + kubectl
+        uses: ./.github/actions/aws-eks-kubectl
+        with:
+          aws-role: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+          eks-cluster: ${{ vars.EKS_CLUSTER_NAME }}
+
+      - name: Ensure bank-app namespace exists
+        run: kubectl apply -f k8s/base/kustomization.yaml
+
+      - name: Apply bank-app-secrets (idempotent)
+        env:
+          DB_SOURCE: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          args=(
+            --from-literal=DB_SOURCE="$DB_SOURCE"
+          
+          )
+          kubectl create secret generic bank-app-secrets \
+            --namespace bank-app \
+            "${args[@]}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ '${{ job.status }}' = 'success' ]; then
+            TS=$(kubectl -n bank-app get secret bank-app-secrets \
+                   -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || echo unknown)
+            {
+              echo "## seed-secrets → **success**"
+              echo ""
+              echo "\`bank-app-secrets\` confirmed in namespace \`bank-app\` (created **$TS**)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## seed-secrets → **${{ job.status }}**" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Deployment summary
-        run: |
-          echo "========================================"
-          echo "✅ Deployment Completed Successfully"
-          echo "========================================"
-          echo ""
-          echo "Cluster: ${{ env.EKS_CLUSTER_NAME }}"
-          echo "Namespace: ${{ env.EKS_NAMESPACE }}"
-          echo "Image: ${{ needs.build-and-push.outputs.image-uri }}"
-          echo "Image Tag: ${{ needs.build-and-push.outputs.image-tag }}"
-          echo ""
-          echo "Next steps:"
-          echo "1. Wait for LoadBalancer endpoint (may take a few minutes)"
-          echo "2. kubectl get svc -n ${{ env.EKS_NAMESPACE }}"
-          echo "3. curl http://your-endpoint/health/live"
-          echo ""
-
-  # Post-Deployment Verification
-  verify-deployment:
-    name: Verify Deployment
-    runs-on: ubuntu-latest
-    needs: [build-and-push, deploy-to-eks]
-    if: success()
+  # ─── 4. Apply the EKS overlay + wait for rollout ─────────────────────────
+  deploy:
+    name: Deploy to EKS
+    needs: [update-manifests, seed-secrets]
+    if: vars.EKS_CLUSTER_NAME != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: production-eks
+      url: ${{ steps.url.outputs.app_url }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      # If update-manifests committed a bump, deploy that exact SHA so we
+      # never race a concurrent push. Falls back to main HEAD when nothing
+      # was bumped (re-run with no code change → manifests already current).
+      - name: Checkout deploy ref
+        uses: actions/checkout@v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          ref: ${{ needs.update-manifests.outputs.bumped_sha || 'main' }}
+          fetch-depth: 1
 
-      - name: Update kubeconfig
+      - name: Configure AWS + kubectl
+        uses: ./.github/actions/aws-eks-kubectl
+        with:
+          aws-role: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+          eks-cluster: ${{ vars.EKS_CLUSTER_NAME }}
+
+      - name: Apply EKS overlay (kubectl built-in kustomize)
         run: |
-          aws eks update-kubeconfig \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --region ${{ env.AWS_REGION }}
+          set -euo pipefail
+          kubectl apply -k k8s/overlays/production/
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-
-      - name: Wait for service endpoint
+      - name: Wait for rollout (5m per deployment)
         run: |
-          echo "Waiting for LoadBalancer endpoint..."
-          for i in {1..30}; do
-            ENDPOINT=$(kubectl get svc ${{ env.IMAGE_NAME }}-service \
-              -n ${{ env.EKS_NAMESPACE }} \
-              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
-
-            if [ -n "$ENDPOINT" ]; then
-              echo "✅ Endpoint ready: $ENDPOINT"
-              echo "endpoint=$ENDPOINT" >> $GITHUB_ENV
-              exit 0
-            fi
-
-            echo "⏳ Waiting for endpoint... ($i/30)"
-            sleep 10
-          done
-
-          echo "⚠️ Endpoint not ready within timeout"
-          echo "Note: This may be normal if using internal ClusterIP service"
-          exit 0
-
-      - name: Run health checks
-        if: env.endpoint != ''
-        run: |
-          echo "Running health checks against: ${{ env.endpoint }}"
-
-          # Try health check endpoints
-          for endpoint in "/health/live" "/health/ready"; do
+          set -euo pipefail
+          {
+            echo "## Rollout"
             echo ""
-            echo "Testing $endpoint..."
-            curl -f http://${{ env.endpoint }}:8080$endpoint \
-              -m 10 || echo "Endpoint check completed"
+            echo "| Deployment | Result |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          fail=0
+          for d in bank-api; do
+            echo "── rollout: $d ──"
+            if kubectl -n bank-app rollout status "deployment/$d" --timeout=5m; then
+              echo "| \`$d\` | OK |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`$d\` | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
+            fi
           done
+          exit "$fail"
 
-      - name: Deployment verification summary
+      - name: Resolve public URL
+        id: url
         run: |
-          echo "========================================"
-          echo "✅ Deployment Verified"
-          echo "========================================"
-          echo ""
-          echo "Image: ${{ needs.build-and-push.outputs.image-uri }}"
-          echo ""
-          echo "To access your deployment:"
-          echo "  kubectl port-forward -n ${{ env.EKS_NAMESPACE }} svc/${{ env.IMAGE_NAME }}-service 8080:8080"
-          echo "  curl http://localhost:8080/health/live"
-          echo ""
-          echo "To view logs:"
-          echo "  kubectl logs -n ${{ env.EKS_NAMESPACE }} -l app=${{ env.IMAGE_NAME }} -f"
-          echo ""
+          set -euo pipefail
+          HOST=$(kubectl -n ingress-nginx get svc ingress-nginx-controller \
+                   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          if [ -z "$HOST" ]; then
+            echo "::warning::ingress-nginx ELB has no hostname yet (still provisioning?)"
+            kubectl -n ingress-nginx get svc ingress-nginx-controller
+            exit 0
+          fi
+          URL="http://$HOST"
+          echo "app_url=$URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Live URL"
+            echo ""
+            echo "[$URL]($URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # Cleanup on failure
-  cleanup-on-failure:
-    name: Cleanup on Failure
-    runs-on: ubuntu-latest
-    needs: [build-and-push, deploy-to-eks, verify-deployment]
-    if: failure()
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig
+      # ── Smoke test ───────────────────────────────────────────────────────
+      # Verifies the cluster is actually serving traffic end-to-end:
+      #   1. GET  /         — confirms ingress-nginx routes to `web` and the
+      #                       SPA is being served (200 + non-empty body).
+      #   2. POST /graphql  — `{ __typename }` is the zero-arg, schema-agnostic
+      #                       probe every GraphQL server accepts. A 200 with
+      #                       `data.__typename` proves api-gateway booted
+      #                       cleanly (DB connection, JWT secret, etc. all OK).
+      #
+      # ELBs occasionally take 30-60 s after a fresh provision before all AZs
+      # answer, so we retry each probe up to 12× with 10 s backoff (~2 min total).
+      # Skipped automatically when the URL step couldn't resolve a hostname.
+      - name: Smoke test (web + GraphQL)
+        if: steps.url.outputs.app_url != ''
+        env:
+          URL: ${{ steps.url.outputs.app_url }}
         run: |
-          aws eks update-kubeconfig \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --region ${{ env.AWS_REGION }}
+          set -euo pipefail
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+          retry() {
+            local label="$1"; shift
+            local attempt=0
+            until "$@"; do
+              attempt=$((attempt + 1))
+              if [ "$attempt" -ge 12 ]; then
+                echo "::error::${label} failed after ${attempt} attempts"
+                return 1
+              fi
+              echo "${label}: attempt ${attempt} failed, retrying in 10 s…"
+              sleep 10
+            done
+            echo "${label}: OK on attempt $((attempt + 1))"
+          }
 
-      - name: Rollback deployment
-        run: |
-          echo "🔄 Attempting to rollback deployment..."
-          kubectl rollout undo deployment/${{ env.IMAGE_NAME }} \
-            -n ${{ env.EKS_NAMESPACE }} || echo "No previous revision to rollback to"
+          probe_web() {
+            curl --fail --silent --show-error --location \
+                 --max-time 10 --output /tmp/web.html "${URL}/"
+            test -s /tmp/web.html
+          }
 
-          echo ""
-          echo "Waiting for rollback to complete..."
-          kubectl rollout status deployment/${{ env.IMAGE_NAME }} \
-            -n ${{ env.EKS_NAMESPACE }} \
-            --timeout=5m || echo "Rollback monitoring completed"
+          probe_graphql() {
+            local body
+            body=$(curl --fail --silent --show-error \
+                        --max-time 10 \
+                        -H 'content-type: application/json' \
+                        -X POST "${URL}/graphql" \
+                        -d '{"query":"{ __typename }"}')
+            echo "$body" | grep -q '"__typename"'
+          }
 
-      - name: Notify failure
-        run: |
-          echo "❌ Deployment failed and has been rolled back (if possible)"
-          echo ""
-          echo "Troubleshooting steps:"
-          echo "1. Check deployment logs:"
-          echo "   kubectl logs -n ${{ env.EKS_NAMESPACE }} -l app=${{ env.IMAGE_NAME }}"
-          echo ""
-          echo "2. Describe failing pod:"
-          echo "   kubectl describe pod -n ${{ env.EKS_NAMESPACE }} <pod-name>"
-          echo ""
-          echo "3. Check events:"
-          echo "   kubectl get events -n ${{ env.EKS_NAMESPACE }} --sort-by='.lastTimestamp'"
-          echo ""
-          echo "4. View rollback history:"
-          echo "   kubectl rollout history deployment/${{ env.IMAGE_NAME }} -n ${{ env.EKS_NAMESPACE }}"
+          web_status=fail
+          graphql_status=fail
+          retry 'GET /'         probe_web     && web_status=ok     || true
+          retry 'POST /graphql' probe_graphql && graphql_status=ok || true
+
+          {
+            echo "## Smoke test"
+            echo ""
+            echo "| Probe | Result |"
+            echo "| --- | --- |"
+            echo "| \`GET ${URL}/\` | ${web_status} |"
+            echo "| \`POST ${URL}/graphql\` (\`{ __typename }\`) | ${graphql_status} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$web_status" != ok ] || [ "$graphql_status" != ok ]; then
+            echo "::error::Smoke test failed (web=${web_status}, graphql=${graphql_status})"
+            exit 1
+          fi

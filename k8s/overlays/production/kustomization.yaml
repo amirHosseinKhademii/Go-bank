@@ -1,47 +1,48 @@
+# Differences from infra/k8s/ (production base):
+#   1. The Ingress is patched so it works on a raw ELB hostname:
+#        - drops `tls:` block (no cert-manager in demo)
+#        - drops `cert-manager.io/cluster-issuer` annotation
+#        - flips `ssl-redirect` / `force-ssl-redirect` / `hsts` off
+#        - removes `host:` so any DNS name pointed at the ingress-nginx
+#          ELB matches (nip.io, /etc/hosts, etc.)
+#
+# Prerequisites in the cluster (one-time, install AFTER eksctl create):
+#
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#   helm repo update
+#   helm install ingress-nginx ingress-nginx/ingress-nginx \
+#     --namespace ingress-nginx --create-namespace \
+#     --set controller.service.type=LoadBalancer
+#
+#   # Wait ~2 min, then grab the AWS ELB DNS:
+#   kubectl -n ingress-nginx get svc ingress-nginx-controller \
+#     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+#
+# That hostname is what you open in the browser.
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-namespace: bank-app
 
 resources:
   - ../../base
 
-labels:
-  - pairs:
-      environment: production
-      managed-by: terraform
-
-replicas:
-  - name: bank-app
-    count: 3
-
 patches:
-  # Production deployment settings
   - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: bank-app
+      kind: Ingress
+      name: bank-api-ingress
     patch: |-
+      - op: remove
+        path: /spec/tls
+      - op: remove
+        path: /spec/rules/0/host
+      - op: remove
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
       - op: replace
-        path: /spec/replicas
-        value: 3
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1ssl-redirect
+        value: "false"
       - op: replace
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: IfNotPresent
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1force-ssl-redirect
+        value: "false"
       - op: replace
-        path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
-        value: 30
-      - op: replace
-        path: /spec/template/spec/containers/0/readinessProbe/initialDelaySeconds
-        value: 10
-
-configMapGenerator:
-  - name: bank-app-config
-    envs:
-      - env.properties
-
-secretGenerator:
-  - name: db-credentials
-    envs:
-      - db-secret.properties
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1hsts
+        value: "false"
