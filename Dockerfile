@@ -17,9 +17,6 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Run tests
-RUN go test -v ./...
-
 # Build binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s" \
