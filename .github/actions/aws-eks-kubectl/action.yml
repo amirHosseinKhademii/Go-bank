@@ -1,0 +1,27 @@
+name: Configure AWS + kubectl for EKS
+description: Assume IAM role via OIDC, configure kubectl for EKS cluster
+inputs:
+  aws-role:
+    description: ARN of the IAM role to assume (e.g. arn:aws:iam::123456789:role/my-role)
+    required: true
+  aws-region:
+    description: AWS region (e.g. eu-west-1)
+    required: true
+  eks-cluster:
+    description: EKS cluster name (e.g. golang-bank)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Assume AWS role via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Update kubeconfig
+      shell: bash
+      run: |
+        aws eks update-kubeconfig \
+          --name ${{ inputs.eks-cluster }} \
+          --region ${{ inputs.aws-region }}
