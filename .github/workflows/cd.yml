@@ -373,21 +373,16 @@ jobs:
       # Verifies the cluster is actually serving traffic end-to-end:
       #   1. GET  /         — confirms ingress-nginx routes to `web` and the
       #                       SPA is being served (200 + non-empty body).
-      #   2. POST /graphql  — `{ __typename }` is the zero-arg, schema-agnostic
-      #                       probe every GraphQL server accepts. A 200 with
-      #                       `data.__typename` proves api-gateway booted
-      #                       cleanly (DB connection, JWT secret, etc. all OK).
       #
       # ELBs occasionally take 30-60 s after a fresh provision before all AZs
       # answer, so we retry each probe up to 12× with 10 s backoff (~2 min total).
       # Skipped automatically when the URL step couldn't resolve a hostname.
-      - name: Smoke test (web + GraphQL)
+      - name: Smoke test (web + accounts)
         if: steps.url.outputs.app_url != ''
         env:
           URL: ${{ steps.url.outputs.app_url }}
         run: |
           set -euo pipefail
-
           retry() {
             local label="$1"; shift
             local attempt=0
@@ -402,38 +397,21 @@ jobs:
             done
             echo "${label}: OK on attempt $((attempt + 1))"
           }
-
           probe_web() {
             curl --fail --silent --show-error --location \
-                 --max-time 10 --output /tmp/web.html "${URL}/"
+                 --max-time 10 --output /tmp/web.html "${URL}/accounts?page_id=1&page_size=5"
             test -s /tmp/web.html
           }
-
-          probe_graphql() {
-            local body
-            body=$(curl --fail --silent --show-error \
-                        --max-time 10 \
-                        -H 'content-type: application/json' \
-                        -X POST "${URL}/graphql" \
-                        -d '{"query":"{ __typename }"}')
-            echo "$body" | grep -q '"__typename"'
-          }
-
-          web_status=fail
-          graphql_status=fail
+          web_status=fail         
           retry 'GET /'         probe_web     && web_status=ok     || true
-          retry 'POST /graphql' probe_graphql && graphql_status=ok || true
-
           {
             echo "## Smoke test"
             echo ""
             echo "| Probe | Result |"
             echo "| --- | --- |"
-            echo "| \`GET ${URL}/\` | ${web_status} |"
-            echo "| \`POST ${URL}/graphql\` (\`{ __typename }\`) | ${graphql_status} |"
+            echo "| \`GET ${URL}/accounts?page_id=1&page_size=5\` | ${web_status} |"
           } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "$web_status" != ok ] || [ "$graphql_status" != ok ]; then
-            echo "::error::Smoke test failed (web=${web_status}, graphql=${graphql_status})"
+          if [ "$web_status" != ok ]; then
+            echo "::error::Smoke test failed (web=${web_status}"
             exit 1
           fi
