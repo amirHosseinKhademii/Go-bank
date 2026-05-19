@@ -261,8 +261,8 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           eks-cluster: ${{ vars.EKS_CLUSTER_NAME }}
 
-      - name: Ensure bank-app namespace exists
-        run: kubectl apply -f k8s/base/kustomization.yaml
+      - name: Apply kustomized manifests
+        run: kubectl apply -k k8s/base/
 
       - name: Apply bank-app-secrets (idempotent)
         env:
