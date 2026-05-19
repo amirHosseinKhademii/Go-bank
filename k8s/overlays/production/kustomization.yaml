@@ -32,8 +32,6 @@ patches:
       name: bank-api-ingress
     patch: |-
       - op: remove
-        path: /spec/tls
-      - op: remove
         path: /spec/rules/0/host
       - op: remove
         path: /metadata/annotations/cert-manager.io~1cluster-issuer
